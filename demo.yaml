@@ -1,0 +1,11 @@
+name: Удаление процедуры на old.gt.ru
+steps:
+  - ssh: server-2
+  - cmd: sudo su gitlab
+    input: "*"
+    display: "Введите пароль sudo:"
+  - cmd: docker exec -i old_php_fpm php artisan procedure-delete ${input}
+    input: true
+    input_to_cmd: true
+    display: "ID процедуры:"
+    show_output: true
