@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/creack/pty"
+	// "github.com/creack/pty"
 	ssh_config "github.com/kevinburke/ssh_config"
 	"github.com/manifoldco/promptui"
 	"golang.org/x/crypto/ssh"
@@ -148,21 +148,11 @@ func runCommand(cmdStr string, stdinData string, showOutput bool, sshClient *ssh
 			ssh.TTY_OP_ISPEED: 14400,
 			ssh.TTY_OP_OSPEED: 14400,
 		}
-		if err := session.RequestPty("xterm", 80, 40, modes); err != nil {
-			// без PTY
-		}
-		stdin, err := session.StdinPipe()
-		if err != nil {
-			return err
-		}
-		stdout, err := session.StdoutPipe()
-		if err != nil {
-			return err
-		}
-		stderr, err := session.StderrPipe()
-		if err != nil {
-			return err
-		}
+		_ = session.RequestPty("xterm", 80, 40, modes)
+
+		stdin, _ := session.StdinPipe()
+		stdout, _ := session.StdoutPipe()
+		stderr, _ := session.StderrPipe()
 		if err := session.Start(cmdStr); err != nil {
 			return err
 		}
@@ -175,6 +165,7 @@ func runCommand(cmdStr string, stdinData string, showOutput bool, sshClient *ssh
 		if showOutput {
 			go io.Copy(os.Stdout, stdout)
 			go io.Copy(os.Stderr, stderr)
+			return session.Wait()
 		} else {
 			var outBuf, errBuf bytes.Buffer
 			go func() { io.Copy(&outBuf, stdout) }()
@@ -193,38 +184,28 @@ func runCommand(cmdStr string, stdinData string, showOutput bool, sshClient *ssh
 		return session.Wait()
 	}
 	cmd := exec.Command("sh", "-c", cmdStr)
+
+	if stdinData != "" {
+		cmd.Stdin = strings.NewReader(stdinData + "\n")
+	}
+
 	if showOutput {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		return cmd.Run()
 	} else {
 		var outBuf, errBuf bytes.Buffer
 		cmd.Stdout = &outBuf
 		cmd.Stderr = &errBuf
-		defer func() {
-			if outBuf.Len() > 0 {
-				fmt.Print(outBuf.String())
-			}
-			if errBuf.Len() > 0 {
-				fmt.Fprint(os.Stderr, errBuf.String())
-			}
-		}()
-	}
-	if stdinData != "" {
-		cmd.Stdin = strings.NewReader(stdinData + "\n")
-	}
-	if showOutput {
-		if stdinData != "" {
-			ptyFile, err := pty.Start(cmd)
-			if err == nil {
-				defer ptyFile.Close()
-				go func() {
-					io.WriteString(ptyFile, stdinData+"\n")
-				}()
-				return cmd.Wait()
-			}
+		err := cmd.Run()
+		if outBuf.Len() > 0 {
+			fmt.Print(outBuf.String())
 		}
+		if errBuf.Len() > 0 {
+			fmt.Fprint(os.Stderr, errBuf.String())
+		}
+		return err
 	}
-	return cmd.Run()
 }
 
 func runScript(script Script) error {
